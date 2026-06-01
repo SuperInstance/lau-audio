@@ -1,14 +1,22 @@
 # lau-audio
 
-> Procedural audio generation for games — no audio files, all synthesized from math. Deterministic.
+> Procedural audio from pure math. No audio files. No samples. Just sine waves, noise, and mathematics. Deterministic — same parameters always produce the same sound.
 
 ## What This Does
 
-Procedural audio generation for games — no audio files, all synthesized from math. Deterministic.. Part of the PLATO/LAU ecosystem — a mathematically rigorous framework for building educational agents that learn, teach, and evolve.
+Procedural audio generation for the **Lau (Layered Agent-UI)** game platform. Every sound in the game world — footsteps, wind, combat, music — is generated from mathematical functions at runtime. No audio files on disk. No downloaded samples. Just code and math.
+
+This means: smaller game size, infinite variation, and every player with the same seed hears the same world.
 
 ## The Key Idea
 
-This crate implements the core abstractions needed for its domain, with a focus on correctness, composability, and conservation guarantees. Every public type is serializable (serde), every algorithm is tested, and every invariant is verified.
+Most games ship gigabytes of audio files. Lau generates everything procedurally:
+- A sword swing = filtered noise burst with exponential decay
+- Wind = layered Perlin noise at different frequencies
+- Footsteps = filtered impulses with randomized timing
+- Music = sequences of synthesized waveforms
+
+Same seed → same sound. Always. This is critical for determinism in a git-tracked game world.
 
 ## Install
 
@@ -18,67 +26,178 @@ cargo add lau-audio
 
 ## Quick Start
 
-See the API Reference below for complete usage. Key entry points:
+### Generate a Waveform
 
 ```rust
-use lau_audio::*;
-// See types and methods below for complete usage
+use lau_audio::{Oscillator, Waveform, AudioFormat, AudioBuffer};
+
+let format = AudioFormat::cd_quality(); // 44100 Hz, 16-bit, mono
+
+// Generate a 440Hz sine wave for 1 second
+let buffer = Oscillator::new(Waveform::Sine, 440.0)
+    .generate(&format, 1.0); // 1 second
+
+// Save to WAV
+buffer.to_wav_file("tone.wav")?;
+```
+
+### Available Waveforms
+
+```rust
+Waveform::Sine,       // Pure tone
+Waveform::Square,     // Retro game sound
+Waveform::Sawtooth,   // buzzy, rich harmonics
+Waveform::Triangle,   // Soft, flute-like
+Waveform::Noise,      // White noise
+Waveform::Pulse { duty_cycle: 0.25 }, // NES-style
+```
+
+### Envelopes (ADSR)
+
+```rust
+use lau_audio::{Envelope, Oscillator, Waveform};
+
+let env = Envelope::adsr()
+    .attack(0.01)    // 10ms fade in
+    .decay(0.1)      // 100ms decay
+    .sustain(0.7)    // Hold at 70%
+    .release(0.3);   // 300ms fade out
+
+let sound = Oscillator::new(Waveform::Sawtooth, 220.0)
+    .with_envelope(env)
+    .generate(&format, 0.5);
+```
+
+### Mix Multiple Sounds
+
+```rust
+use lau_audio::Mixer;
+
+let mut mixer = Mixer::new(&format);
+
+// Layer sounds
+mixer.add(Oscillator::new(Waveform::Sine, 440.0).generate(&format, 0.5));
+mixer.add(Oscillator::new(Waveform::Sine, 554.0).generate(&format, 0.5)); // major third
+mixer.add(Oscillator::new(Waveform::Sine, 660.0).generate(&format, 0.5)); // perfect fifth
+
+let chord = mixer.mix(); // A major chord
+```
+
+### Filters
+
+```rust
+use lau_audio::Filter;
+
+let bright = Oscillator::new(Waveform::Sawtooth, 440.0)
+    .generate(&format, 1.0);
+
+// Low-pass filter — muffle the sound
+let muffled = Filter::low_pass(800.0) // cutoff at 800Hz
+    .apply(&bright, &format);
+
+// High-pass — thin out bass
+let thin = Filter::high_pass(2000.0)
+    .apply(&bright, &format);
+```
+
+### Game Sound Effects
+
+```rust
+use lau_audio::Sfx;
+
+// Sword swing — noise burst with decay
+let sword = Sfx::sword_swing(&format);
+
+// Footstep — filtered click
+let step = Sfx::footstep(&format, "stone"); // surface type matters
+
+// Explosion — layered noise with resonance
+let boom = Sfx::explosion(&format, 0.8); // intensity
+
+// Door creak — frequency-modulated sine
+let creak = Sfx::door_creak(&format);
 ```
 
 ## API Reference
 
-```rust
-pub struct AudioFormat 
-pub enum Waveform 
-    pub fn sample(&self, phase: f64) -> f64 
-pub struct Oscillator 
-    pub fn new(frequency: f64, amplitude: f64) -> Self 
-    pub fn tick(&mut self, sample_rate: f64) -> AudioSample 
-    pub fn set_frequency(&mut self, freq: f64) 
-    pub fn set_amplitude(&mut self, amp: f64) 
-pub enum EnvelopeState 
-pub struct Envelope 
-    pub fn new(attack: f64, decay: f64, sustain: f64, release: f64) -> Self 
-    pub fn note_on(&mut self) 
-    pub fn note_off(&mut self) 
-    pub fn tick(&mut self, dt: f64) -> f64 
-pub struct MixerChannel 
-pub struct AudioMixer 
-    pub fn new() -> Self 
-    pub fn add_channel(&mut self) -> usize 
-    pub fn mix(&self, inputs: &[AudioSample]) -> AudioSample 
-pub struct AudioBuffer 
-    pub fn new(format: AudioFormat, duration_secs: f64) -> Self 
-    pub fn set_sample(&mut self, index: usize, sample: AudioSample) 
-    pub fn get_sample(&self, index: usize) -> AudioSample 
-    pub fn len(&self) -> usize  self.samples.len() }
-    pub fn is_empty(&self) -> bool  self.samples.is_empty() }
-    pub fn duration(&self) -> f64 
-    pub fn to_i16_samples(&self) -> Vec<i16> 
-pub struct SoundGenerator;
-    pub fn generate_tone(freq: f64, duration: f64, format: &AudioFormat, waveform: Waveform) -> AudioBuffer 
-    pub fn generate_chord(freqs: &[f64], duration: f64, format: &AudioFormat) -> AudioBuffer 
-    pub fn generate_sweep(start_freq: f64, end_freq: f64, duration: f64, format: &AudioFormat) -> AudioBuffer 
-pub enum MusicScale 
-    pub fn frequencies(&self, root: f64, octaves: u32) -> Vec<f64> 
-pub struct VibeToMusic;
-    pub fn tempo_from_vibe(vibe: f64) -> f64 
-    pub fn scale_from_vibe(vibe: f64) -> MusicScale 
-    pub fn volume_from_vibe(vibe: f64) -> f64 
-    pub fn frequency_from_vibe(vibe: f64, root: f64) -> f64 
-```
+### Oscillator
+
+| Method | Description |
+|--------|-------------|
+| `Oscillator::new(waveform, freq)` | Create oscillator |
+| `.with_envelope(env)` | Apply ADSR envelope |
+| `.with_frequency_mod(lfo)` | Add vibrato/tremolo |
+| `.generate(format, duration)` | Produce AudioBuffer |
+
+### Waveform
+
+| Variant | Sound Character |
+|---------|----------------|
+| `Sine` | Pure, clean |
+| `Square` | Hollow, retro |
+| `Sawtooth` | Bright, buzzy |
+| `Triangle` | Soft, warm |
+| `Noise` | Hiss, texture |
+| `Pulse { duty_cycle }` | NES/chip-tune |
+
+### Filter
+
+| Method | Description |
+|--------|-------------|
+| `Filter::low_pass(cutoff)` | Remove high frequencies |
+| `Filter::high_pass(cutoff)` | Remove low frequencies |
+| `Filter::band_pass(low, high)` | Keep a frequency range |
+| `Filter::notch(freq, q)` | Remove specific frequency |
+
+### Sfx (Sound Effects)
+
+| Method | Description |
+|--------|-------------|
+| `Sfx::sword_swing(format)` | Weapon sound |
+| `Sfx::footstep(format, surface)` | Surface-dependent step |
+| `Sfx::explosion(format, intensity)` | Layered boom |
+| `Sfx::door_creak(format)` | Frequency-modulated creak |
+| `Sfx::splash(format, size)` | Water impact |
+| `Sfx::wind(format, speed)` | Continuous wind noise |
+
+### AudioBuffer
+
+| Method | Description |
+|--------|-------------|
+| `buffer.samples()` | Raw sample data |
+| `buffer.duration()` | Length in seconds |
+| `buffer.to_wav_file(path)` | Write WAV file |
+| `buffer.normalize()` | Normalize to [-1, 1] |
+| `buffer.amplify(gain)` | Volume adjustment |
 
 ## How It Works
 
-Read the source in `src/` for full implementation details. All algorithms are documented with inline comments explaining the mathematical foundations.
+Audio generation uses additive and subtractive synthesis:
+1. **Oscillators** generate raw waveforms at specified frequencies
+2. **Envelopes** shape amplitude over time (ADSR)
+3. **Filters** sculpt the frequency content (biquad filters)
+4. **Mixing** combines multiple sources with gain control
+5. **SFX generators** compose these primitives into game sounds
 
-## The Math
+All generation is deterministic: same parameters + same seed = identical output. No randomness unless explicitly seeded.
 
-This crate implements formal mathematical constructs. See the source documentation for theorem statements and proofs of correctness.
+Sample rates: 22050, 44100, 48000, 96000 Hz supported. Default: CD quality (44100 Hz, 16-bit, mono).
 
 ## Testing
 
-**52 tests** covering construction, serialization, correctness properties, edge cases, and composability with other lau-* crates.
+52 tests covering: all waveform generation, ADSR envelopes, filter frequency response, mixing gain, SFX generation, WAV serialization, sample rate conversion, edge cases (silence, clipping, DC offset).
+
+## Part of the Lau Platform
+
+- **lau-git-world** — Git-native game worlds
+- **lau-quest** — Quest/mission system
+- **lau-biome** — 10 ecological zones
+- **lau-spatial** — Spatial indexing
+- **lau-audio** — You are here
+- **lau-scheduler** — Game loop
+- **lau-memory-arena** — Entity allocator
+- **lau-genealogy** — Lineage tracking
+- **lau-recipe** — Crafting recipes
 
 ## License
 
